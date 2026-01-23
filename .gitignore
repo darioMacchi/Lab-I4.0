@@ -1,0 +1,6 @@
+.DS_Store
+
+vAVMenv/bin
+vAVMenv/include
+vAVMenv/lib
+vAVMenv/pyvenv.cfg
