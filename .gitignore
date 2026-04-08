@@ -4,3 +4,4 @@ vAVMenv/bin
 vAVMenv/include
 vAVMenv/lib
 vAVMenv/pyvenv.cfg
+vAVMenv/__pycache__
