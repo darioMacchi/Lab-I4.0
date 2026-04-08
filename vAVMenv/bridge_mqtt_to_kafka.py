@@ -205,7 +205,7 @@ class BridgeMQTTKafka:
             sys.stderr.write("Errore! Impossibile risolvere l'indirizzo fornito\n")
             exit(-8)
         except ConnectionRefusedError:
-            sys.stderr.write("Errore! Connessione rifiutata\n")
+            sys.stderr.write("Errore! Connessione MQTT rifiutata\n")
             exit(-9)
 
         return mqttc
@@ -231,7 +231,7 @@ class BridgeMQTTKafka:
             # Setup Kafka producer
             kafka_prod = KafkaProducer(bootstrap_servers=[bootstrap_server], client_id="AVM_telemetry_producer", max_in_flight_requests_per_connection=1)
         except NoBrokersAvailable:
-            print("Errore! Nessun broker disponibile per la connessione")
+            print("Errore! Nessun broker Kafka disponibile per la connessione")
             exit(-10)
 
         return kafka_prod
