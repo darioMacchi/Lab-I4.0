@@ -344,6 +344,12 @@ class Autobus:
         if type(lat_direction) is not str:
             raise TypeError(f"Errore! Il tipo del parametro passato deve essere 'str'. Ricevuto {type(lat_direction)}")
 
+        # Verifica parametro 'lat_direction' sia all'interno dell'insieme di stringhe {NORD, SUD, nord, sud}
+        lat_direction = lat_direction.upper()
+        if lat_direction != "NORD" and lat_direction != "SUD":
+            sys.stderr.write("Errore! Il parametro passato deve essere: NORD | SUD | nord | sud\n")
+            exit(-1)
+
         self._lat_direction = lat_direction
 
     # Getter 'long_direction' parameter
@@ -354,6 +360,12 @@ class Autobus:
     def set_long_direction(self, long_direction: str):
         if type(long_direction) is not str:
             raise TypeError(f"Errore! Il tipo del parametro passato deve essere 'str'. Ricevuto {type(long_direction)}")
+
+        # Verifica parametro 'long_direction' sia all'interno dell'insieme di stringhe {EST, OVEST, est, ovest}
+        long_direction = long_direction.upper()
+        if long_direction != "EST" and long_direction != "OVEST":
+            sys.stderr.write("Errore! Il parametro passato deve essere: EST | OVEST | est | ovest\n")
+            exit(-2)
 
         self._long_direction = long_direction
 
