@@ -156,6 +156,28 @@ def test_set_humidity(autobus: Autobus):
     
     return flag
 
+# Test set_lat_direction()
+def test_lat_direction(autobus: Autobus):
+    flag = False
+
+    try:
+        autobus.set_lat_direction(2)
+    except TypeError:
+        flag = True
+
+    return flag
+
+# Test set_long_direction()
+def test_long_direction(autobus: Autobus):
+    flag = False
+
+    try:
+        autobus.set_long_direction(2)
+    except TypeError:
+        flag = True
+
+    return flag
+
 # Test set_formatted_data_to_send()
 def test_set_formatted_data_to_send(autobus: Autobus):
     flag = False
@@ -304,6 +326,8 @@ def main():
     flag_env_data = test_set_environmental_data(autobus)
     flag_temperature = test_set_temperature(autobus)
     flag_humidity = test_set_humidity(autobus)
+    flag_lat_direction = test_lat_direction(autobus)
+    flag_long_direction = test_long_direction(autobus)
     flag_f_data = test_set_formatted_data_to_send(autobus)
     flag_sim = test_simulate(autobus, ranges["gps"]["longitude_low"], ranges["gps"]["longitude_up"], ranges["gps"]["latitude_low"], ranges["gps"]["latitude_up"], ranges["speed_low"], ranges["speed_up"], ranges["tyre_pressure_low"], ranges["tyre_pressure_up"], ranges["num_psg_low"], ranges["num_psg_up"], ranges["environmental"]["temp_low"], ranges["environmental"]["temp_up"], ranges["environmental"]["hum_low"], ranges["environmental"]["hum_up"], ranges["brake_status"], ranges["engine_status"], True, 1)
     flag_costruttore_hybrid = test_costruttore_hybrid(10, ranges, delay_mqtt, host, port)
@@ -324,9 +348,34 @@ def main():
     print("\tTest set_environmental_data(): " + "SUPERATO" if flag_env_data else "NON SUPERATO")
     print("\tTest set_temperature(): " + "SUPERATO" if flag_temperature else "NON SUPERATO")
     print("\tTest set_humidity(): " + "SUPERATO" if flag_humidity else "NON SUPERATO")
+    print("\tTest set_lat_direction(): " + "SUPERATO" if flag_lat_direction else "NON SUPERATO")
+    print("\tTest set_long_direction(): " + "SUPERATO" if flag_long_direction else "NON SUPERATO")
     print("\tTest set_formatted_data_to_send(): " + "SUPERATO" if flag_f_data else "NON SUPERATO")
     print("\tTest simulate(): " + "SUPERATO" if flag_sim else "NON SUPERATO")
     print("\tTest costruttore hybrid: " + "SUPERATO" if flag_costruttore_hybrid else "NON SUPERATO")
+
+    # Reporting test semantica set_lat_direction() e set_long_direction()
+    autobus.set_lat_direction("nord")
+    print("\tTest nord: " + autobus.get_lat_direction())
+    autobus.set_lat_direction("sud")
+    print("\tTest sud: " + autobus.get_lat_direction())
+    autobus.set_lat_direction("NORD")
+    print("\tTest NORD: " + autobus.get_lat_direction())
+    autobus.set_lat_direction("SUD")
+    print("\tTest SUD: " + autobus.get_lat_direction())
+    autobus.set_lat_direction("abc")
+    print("\tTest abc: " + autobus.get_lat_direction())
+
+    autobus.set_long_direction("est")
+    print("\tTest est: " + autobus.get_long_direction())
+    autobus.set_long_direction("ovest")
+    print("\tTest ovest: " + autobus.get_long_direction())
+    autobus.set_long_direction("EST")
+    print("\tTest EST: " + autobus.get_long_direction())
+    autobus.set_long_direction("OVEST")
+    print("\tTest OVEST: " + autobus.get_long_direction())
+    autobus.set_long_direction("abc")
+    print("\tTest abc: " + autobus.get_long_direction())
 
 
 if __name__ == "__main__":
