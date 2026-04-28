@@ -18,6 +18,8 @@ bridge_mqtt_to_kafka = None
 def signal_handler(sig_num: int, frame):
     sig_name = signal.Signals(sig_num).name
 
+    # Utilizzo dell'oggetto globale di bridging MQTT to Kafka per accedere all'istanza creata e agire su di essa per
+    # una 'graceful disconnection'
     global bridge_mqtt_to_kafka
 
     # Stop oggetto bridge MQTT to Kafka
@@ -345,7 +347,7 @@ def main():
     # Verifica validità indirizzo broker MQTT e indirizzo broker Kafka
     host_mqtt, port_mqtt, host_kafka, port_kafka = check_cmd_line_args(host_mqtt=sys.argv[1], port_mqtt=sys.argv[2], host_kafka=sys.argv[3], port_kafka=sys.argv[4])
 
-    # 
+    # Utilizzo dell'oggetto globale di bridging MQTT to Kafka
     global bridge_mqtt_to_kafka
 
     # Instanziazione dell'oggetto Bridge MQTT to Kafka
