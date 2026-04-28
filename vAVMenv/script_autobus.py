@@ -1,3 +1,4 @@
+import signal
 import sys
 import time
 
@@ -5,6 +6,42 @@ from autobus_elettrico import AutobusElettrico
 from autobus_ibrido import AutobusIbrido
 from autobus_termico import AutobusTermico
 
+
+# Lista di autobus smart con motorizzazione termica
+termic_bus_list = []
+# Lista di autobus smart con motorizzazione ibrida
+hybrid_bus_list = []
+# Lista di autobus smart con motorizzazione elettrica
+electric_bus_list = []
+
+# Handler del segnale CTRL+C - metodo con cui si termina l'esecuzione di tutti gli Autobus con un messaggio, successivamente
+# avviene la cessazione di tutte le connessioni e la terminazione dei thread di background in cui avviene la comunicazione
+# con il broker RabbitMQ per il protocollo di comunicazione MQTT, e infine avviene la terminazione con codice uscita 0
+# (funzionamento corretto) - firma del handler deve essere 'handler_name(sig_num, frame)'
+def shutdown_all_autobus(sig_num: int, frame):
+    sig_name = signal.Signals(sig_num).name
+
+    # Utilizzo delle liste di autobus smart di tutte le motorizzazioni per accedere alle istanze create e agire su di esse
+    # per una 'graceful disconnection'
+    global termic_bus_list
+    global hybrid_bus_list
+    global electric_bus_list
+
+    print("")
+
+    # Disconnessione dal broker MQTT per tutti gli Autobus e terminazione di tutti i background thread
+    for termic_bus in termic_bus_list:
+        termic_bus.stop_autobus()
+    
+    for hybrid_bus in hybrid_bus_list:
+        hybrid_bus.stop_autobus()
+
+    for electric_bus in electric_bus_list:
+        electric_bus.stop_autobus()
+
+    print(f"Esecuzione interrotta dal segnale {sig_name}")
+    print("Spegnimento motore...")
+    sys.exit(0)
 
 # Check CMD Line Arguments - verifica dei parametri passati da linea di comando, in particolare relativi al numero di
 # autobus da costituire divisi per tipologia di motorizzazione. Viene operato un controllo sul tipo dei paramteri passati,
@@ -43,18 +80,18 @@ def check_cmd_line_args(termic_autobus_num: str, hybrid_autobus_num: str, electr
         termic_num = int(termic_autobus_num)
     except ValueError:
         sys.stderr.write("Errore! L'argomento $num_autobus_termici passato da linea di comando non è un numero valido\n")
-        exit(-2)
+        sys.exit(-2)
 
     # Check numero non negativo
     if termic_num < 0:
         sys.stderr.write("Errore! L'argomento $num_autobus_termici deve essere un numero maggiore o uguale a zero\n")
-        exit(-3)
+        sys.exit(-3)
 
     # Check numero non superiore al numero di targhe disponibili
     termic_num_max = len(AutobusTermico.pool_termic_license_plates)
     if termic_num > termic_num_max:
         sys.stderr.write("Errore! L'argomento $num_autobus_termici deve essere un numero non superiore a {}\n".format(termic_num_max))
-        exit(-4)
+        sys.exit(-4)
 
     # Hybrid
     # Check numero valido
@@ -62,18 +99,18 @@ def check_cmd_line_args(termic_autobus_num: str, hybrid_autobus_num: str, electr
         hybrid_num = int(hybrid_autobus_num)
     except ValueError:
         sys.stderr.write("Errore! L'argomento $num_autobus_ibridi passato da linea di comando non è un numero valido\n")
-        exit(-5)
+        sys.exit(-5)
 
     # Check numero non negativo
     if hybrid_num < 0:
         sys.stderr.write("Errore! L'argomento $num_autobus_ibridi deve essere un numero maggiore o uguale a zero\n")
-        exit(-6)
+        sys.exit(-6)
 
     # Check numero non superiore al numero di targhe disponibili
     hybrid_num_max = len(AutobusIbrido.pool_hybrid_license_plates)
     if hybrid_num > hybrid_num_max:
         sys.stderr.write("Errore! L'argomento $num_autobus_ibridi deve essere un numero non superiore a {}\n".format(hybrid_num_max))
-        exit(-7)
+        sys.exit(-7)
 
     # Electric
     # Check numero valido
@@ -81,25 +118,25 @@ def check_cmd_line_args(termic_autobus_num: str, hybrid_autobus_num: str, electr
         electric_num = int(electric_autobus_num)
     except ValueError:
         sys.stderr.write("Errore! L'argomento $num_autobus_elettrici passato da linea di comando non è un numero valido\n")
-        exit(-8)
+        sys.exit(-8)
 
     # Check numero non negativo
     if electric_num < 0:
         sys.stderr.write("Errore! L'argomento $num_autobus_elettrici deve essere un numero maggiore o uguale a zero\n")
-        exit(-9)
+        sys.exit(-9)
 
     # Check numero non superiore al numero di targhe disponibili
     electric_num_max = len(AutobusElettrico.pool_electric_license_plates)
     if electric_num > electric_num_max:
         sys.stderr.write("Errore! L'argomento $num_autobus_elettrici deve essere un numero non superiore a {}\n".format(electric_num_max))
-        exit(-10)
+        sys.exit(-10)
 
     # Host
     # Check stringa non vuota
     host_mqtt = host
     if host_mqtt == "":
         sys.stderr.write("Errore! L'argomento $host deve essere un indirizzo non nullo\n")
-        exit(-11)
+        sys.exit(-11)
 
     # Port
     # Check numero valido
@@ -107,12 +144,12 @@ def check_cmd_line_args(termic_autobus_num: str, hybrid_autobus_num: str, electr
         port_mqtt = int(port)
     except ValueError:
         sys.stderr.write("Errore! L'argomento $porta passato da linea di comando non è un numero valido\n")
-        exit(-12)
+        sys.exit(-12)
 
     # Check porta
     if port_mqtt != 1883 and port_mqtt != 8883:
         sys.stderr.write("Errore! L'argomento $porta deve essere una porta MQTT valida: 1883 oppure 8883 (connessioni SSL)\n")
-        exit(-13)
+        sys.exit(-13)
 
     return termic_num, hybrid_num, electric_num, host_mqtt, port_mqtt
 
@@ -129,7 +166,7 @@ def main():
         sys.stderr.write("\t$num_autobus_elettrici = 'num_autobus_elettrici'\n")
         sys.stderr.write("\t$host = 'host_MQTT_broker'\n")
         sys.stderr.write("\t$porta = '1883' | '8883'\n")
-        exit(-1)
+        sys.exit(-1)
 
     # Ranges intervallo misure
     ranges = {
@@ -191,6 +228,10 @@ def main():
     # Setup ritardo accensione motore
     delay_setup = 2.0
     # Setup timeout attesa pubblicazione messaggio broker MQTT
+    # TODO
+    # Ridimensionare (al momento è troppo alto perché per ogni messaggio aspettare quasi 5 secondi di timeout per la
+    # pubblicazione del messaggio è tanto, soprattutto se ci sono tanti messaggi in coda [magari a seguito di una
+    # perdita di connessione col broker MQTT])
     delay_mqtt = 4.90
     # Numero autobus:
     #   Termici
@@ -207,22 +248,25 @@ def main():
     # Lista necessaria a verificare la correttezza dei contatori fermata bus restituiti dai diversi autobus smart
     update_fermata_bus_list = []
 
+    # Installazione handler del segnale CTRL+C
+    signal.signal(signalnum=signal.SIGINT, handler=shutdown_all_autobus)
+
     # Verifica validità numero autobus e indirizzo broker MQTT
     termic_num, hybrid_num, electric_num, host, port = check_cmd_line_args(termic_autobus_num=sys.argv[1], hybrid_autobus_num=sys.argv[2], electric_autobus_num=sys.argv[3], host=sys.argv[4], port=sys.argv[5])
 
     # Istanziazione oggetti Autobus
-    # Lista di autobus smart con motorizzazione termica
-    termic_bus_list = []
+    # Utilizzo della lista globale di autobus smart con motorizzazione termica
+    global termic_bus_list
     for _ in range(0, termic_num):
         termic_bus_list.append(AutobusTermico(ranges=ranges, timeout=delay_mqtt, host=host, port=port))
 
-    # Lista di autobus smart con motorizzazione ibrida
-    hybrid_bus_list = []
+    # Utilizzo della lista globale di autobus smart con motorizzazione ibrida
+    global hybrid_bus_list
     for _ in range(0, hybrid_num):
         hybrid_bus_list.append(AutobusIbrido(ranges=ranges, timeout=delay_mqtt, host=host, port=port))
 
-    # Lista di autobus smart con motorizzazione elettrica
-    electric_bus_list = []
+    # Utilizzo della lista globale di autobus smart con motorizzazione elettrica
+    global electric_bus_list
     for _ in range(0, electric_num):
         electric_bus_list.append(AutobusElettrico(ranges=ranges, timeout=delay_mqtt, host=host, port=port))
 
@@ -289,7 +333,7 @@ def main():
             for j in range(i+1, len(update_fermata_bus_list)):
                 if update_fermata_bus_list[i] != update_fermata_bus_list[j]:
                     sys.stderr.write("Errore! Uno dei contatori delle fermate bus è diverso dagli altri\n")
-                    exit(-20)
+                    sys.exit(-26)
         update_fermata_bus = update_fermata_bus_list[0]
 
         # Aggiornamento al valore restituito dalle funzioni di simulazione metriche
