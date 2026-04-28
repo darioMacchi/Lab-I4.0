@@ -7,6 +7,25 @@ import paho.mqtt.client as mqtt
 import paho.mqtt.reasoncodes as mqttrc
 from kafka import KafkaProducer
 from kafka.errors import NoBrokersAvailable
+from paho.mqtt.enums import MQTTErrorCode
+
+
+# Oggetto Bridge MQTT to Kafka
+bridge_mqtt_to_kafka = None
+
+
+# Handler segnale CTRL+C
+def signal_handler(sig_num: int, frame):
+    sig_name = signal.Signals(sig_num).name
+
+    global bridge_mqtt_to_kafka
+
+    # Stop oggetto bridge MQTT to Kafka
+    bridge_mqtt_to_kafka.stop_bridge()
+
+    # Terminazione
+    print(f"Esecuzione interrotta dal segnale {sig_name}")
+    sys.exit(0)
 
 
 # Oggetto Bridge MQTT to Kafka - permette di avviare un MQTT consumer che recepisce i messaggi provenienti dal broker
@@ -24,8 +43,54 @@ class BridgeMQTTKafka:
         self._port_kafka = port_kafka
         self._kafka_producer = self.setup_kafka()
 
-        # Installazione handler del segnale CTRL+C
-        signal.signal(signalnum=signal.SIGINT, handler=self.signal_handler)
+    # Setup MQTT - metodo necessario alla creazione del client MQTT specificando versione delle callback, client_id 
+    # e sessione persistente. Vengono inoltre specificate le relative callback necessarie ai fini di corretta gestione
+    # di connessione, fallimento alla riconessione automatica, subscription e ricezione di un messaggio
+    def setup_mqtt(self):
+        # Setup client MQTT
+        mqttc = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id="AVM_telemetry_consumer", clean_session=False)
+        mqttc.on_connect = self.on_connect
+        mqttc.on_connect_fail = self.on_connect_fail
+        mqttc.on_subscribe = self.on_subscribe
+        mqttc.on_message = self.on_message
+        mqttc.user_data_set({})
+
+        # Inizializzazione var per contenere return value della connessione al broker MQTT
+        err = None
+
+        try:
+            # Connessione verso il broker MQTT
+            err = mqttc.connect(host=self.get_host_mqtt(), port=self.get_port_mqtt(), keepalive=60)
+        except socket.gaierror:
+            sys.stderr.write("Errore! Impossibile risolvere l'indirizzo fornito\n")
+            sys.exit(-8)
+        except ConnectionRefusedError:
+            sys.stderr.write("Errore! Connessione MQTT rifiutata\n")
+            sys.exit(-9)
+        else:
+            if err != MQTTErrorCode.MQTT_ERR_SUCCESS:
+                print("Errore! Connessione non avvenuta\n")
+                sys.exit(-10)
+
+            return mqttc
+
+    # Setup Kafka - metodo necessario alla creazione del producer Kafka specificando bootstrap server a cui deve avvenire
+    # la connessione, client_id, e numero massimo di richieste "pipelined" verso il Kafka broker
+    def setup_kafka(self):
+        bootstrap_server = self.get_host_kafka() + ":" + str(self.get_port_kafka())
+
+        # Gestione errore di connessione ad un broker non disponibile alla connessione
+        try:
+            # Instanziazione Kafka producer con bootstrap server a cui deve avvenire la connessione, client_id, e
+            # numero massimo di richieste "pipelined" verso il Kafka broker
+
+            # Setup Kafka producer
+            kafka_prod = KafkaProducer(bootstrap_servers=[bootstrap_server], client_id="AVM_telemetry_producer", max_in_flight_requests_per_connection=1)
+        except NoBrokersAvailable:
+            print("Errore! Nessun broker Kafka disponibile per la connessione")
+            sys.exit(-11)
+
+        return kafka_prod
 
     # Getter 'host_mqtt' parameter
     def get_host_mqtt(self):
@@ -79,16 +144,11 @@ class BridgeMQTTKafka:
     def get_kafka_client(self):
         return self._kafka_producer
 
-    # Handler segnale CTRL+C
-    def signal_handler(self, sig_num: int, frame):
-        sig_name = signal.Signals(sig_num).name
-
-        # Disconnessione dal broker MQTT
-        err = self.get_mqtt_client().disconnect()
-        # Chiusura consumer Kafka
-        self.get_kafka_client().close()
-        print(f"\nEsecuzione interrotta dal segnale {sig_name}, connessione al broker Kafka interrotta, e connessione al broker MQTT cessata con " + "successo" if err == mqtt.MQTT_ERR_SUCCESS else "insuccesso")
-        exit(0)
+    # Loop method - chiamata non bloccante che concede di non preoccuparsi di funzionalità utili come la riconnessione
+    # automatica al broker MQTT, ma anche il processamento del traffico di rete e della gestione delle callback.
+    # Creazione di un thread separato per effettuare queste operazioni
+    def loop_forever(self):
+        self.get_mqtt_client().loop_forever()
 
     # on_subscribe - callback necessaria per il protocollo di comunicazione MQTT per gestire il momento in cui
     # il client riceve una risposta SUBACK dal broker
@@ -96,13 +156,16 @@ class BridgeMQTTKafka:
         # Dato che la subscription è multipla (a più topic), reason_code_list contiene
         # più entry
         if reason_code_list[0].is_failure:
-            print(f"Il broker ha rifiutato la subscription al topic AVM/telemetry/autobus/termic: {reason_code_list[0]}\n")
+            print(f"Il broker ha rifiutato la subscription al topic AVM/telemetry/autobus/termic : {reason_code_list[0]}\n")
         elif reason_code_list[1].is_failure:
-            print(f"Il broker ha rifiutato la subscription al topic AVM/telemetry/autobus/hybrid: {reason_code_list[1]}\n")
+            print(f"Il broker ha rifiutato la subscription al topic AVM/telemetry/autobus/hybrid : {reason_code_list[1]}\n")
         elif reason_code_list[2].is_failure:
-            print(f"Il broker ha rifiutato la subscription al topic AVM/telemetry/autobus/electric: {reason_code_list[2]}\n")
+            print(f"Il broker ha rifiutato la subscription al topic AVM/telemetry/autobus/electric : {reason_code_list[2]}\n")
         else:
-            print(f"Il broker ha messo a disposizione la seguente QoS: {reason_code_list[0].value}\n")
+            print(f"Il broker ha messo a disposizione la seguente QoS:")
+            print(f"\tAVM/telemetry/autobus/termic : {reason_code_list[0].value}")
+            print(f"\tAVM/telemetry/autobus/hybrid : {reason_code_list[1].value}")
+            print(f"\tAVM/telemetry/autobus/electric : {reason_code_list[2].value}")
 
     # on_connect - callback necessaria per il protocollo di comunicazione MQTT per gestire il momento in cui 
     # il client riceve una risposta CONNACK dal server (broker RabbitMQ) - firma prestabilita
@@ -124,6 +187,7 @@ class BridgeMQTTKafka:
     def on_connect_fail(self, client, userdata):
         print("Fallito stabilimento della (ri)connessione TCP automatica verso il broker da parte di loop_forever()")
 
+    # -- VERIFICA FUNZIONAMENTO --
     # on_message - callback necessaria per il protocollo di comunicazione MQTT per gestire il momento in cui 
     # un messaggio PUBLISH viene ricevuto dal server
     def on_message(self, client: mqtt.Client, userdata: dict, msg: mqtt.MQTTMessage):
@@ -144,8 +208,8 @@ class BridgeMQTTKafka:
                     # Se al di sotto di 'last' allora aggiunta del messaggio
                     userdata[msg.mid] = payload["timestamp"]
                 else:
-                    # Se uguale o al di sopra di 'last' allora rimozione dei valori più vecchi dal dizionario e aggiunta del
-                    # nuovo elemento
+                    # Se uguale o al di sopra di 'last' allora rimozione dei valori più vecchi dal dizionario e aggiunta 
+                    # del nuovo elemento
                     earliest = min(userdata.values())
                     earliest_keys = [k for k, val in userdata.items() if val == earliest]
                     for k in earliest_keys:
@@ -186,56 +250,16 @@ class BridgeMQTTKafka:
             result = future.get(timeout=60)
             print(f"\nMessaggio inoltrato dal topic MQTT {msg.topic} al topic Kafka {kafka_topic}, con offset {result.offset}\n")
 
-    # Setup MQTT - metodo necessario alla creazione del client MQTT specificando versione delle callback, client_id 
-    # e sessione persistente. Vengono inoltre specificate le relative callback necessarie ai fini di corretta gestione
-    # di connessione, fallimento alla riconessione automatica, subscription e ricezione di un messaggio
-    def setup_mqtt(self):
-        # Setup client MQTT
-        mqttc = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id="AVM_telemetry_consumer", clean_session=False)
-        mqttc.on_connect = self.on_connect
-        mqttc.on_connect_fail = self.on_connect_fail
-        mqttc.on_subscribe = self.on_subscribe
-        mqttc.on_message = self.on_message
-        mqttc.user_data_set({})
-
-        try:
-            # Connessione verso il broker MQTT
-            mqttc.connect(host=self.get_host_mqtt(), port=self.get_port_mqtt(), keepalive=60)
-        except socket.gaierror:
-            sys.stderr.write("Errore! Impossibile risolvere l'indirizzo fornito\n")
-            exit(-8)
-        except ConnectionRefusedError:
-            sys.stderr.write("Errore! Connessione MQTT rifiutata\n")
-            exit(-9)
-
-        return mqttc
-    
-    # Loop method - chiamata bloccante che concede di non preoccuparsi di funzionalità utili come la riconnessione
-    # automatica al broker MQTT, ma anche il processamento del traffico di rete e della gestione delle callback.
-    # Creazione di un thread separato per effettuare queste operazioni
-    def loop_forever(self):
-        self.get_mqtt_client().loop_forever()
-
-    # Setup Kafka - metodo necessario alla creazione del producer Kafka specificando bootstrap server a cui deve avvenire
-    # la connessione, client_id, e numero massimo di richieste "pipelined" verso il Kafka broker
-    def setup_kafka(self):
-        bootstrap_server = self.get_host_kafka() + ":" + str(self.get_port_kafka())
-
-        # Gestione errore di connessione ad un broker non disponibile alla connessione
-        try:
-            # Instanziazione Kafka consumer con iscrizione topic, assegnazione ad un consumer group, bootstrap server a cui deve
-            # avvenire la connessione, client_id, intervallo di auto commit a 4s dato che i messaggi vengono prodotti ogni 5s dal
-            # sistema AVM di telemetria, e auto offset reset a earliest in modo che per politica nel momento in cui avviene un errore
-            # OffsetOutOfRange ci si sposta al messaggio più vecchio possibile
-
-            # Setup Kafka producer
-            kafka_prod = KafkaProducer(bootstrap_servers=[bootstrap_server], client_id="AVM_telemetry_producer", max_in_flight_requests_per_connection=1)
-        except NoBrokersAvailable:
-            print("Errore! Nessun broker Kafka disponibile per la connessione")
-            exit(-10)
-
-        return kafka_prod
-
+    # Stop method - prevede lo stop del bridge a seguito della ricezione di un segnale SIGINT (CTRL+C), per una 
+    # graceful disconnection viene eseguito il metodo disconnect(.) per la disconnessione dal broker MQTT e la chiusura
+    # del consumer Kafka con il metodo close(.), inoltre viene stampato a video un mesaggio di informazione
+    def stop_bridge(self):
+        # Disconnessione dal broker MQTT
+        err = self.get_mqtt_client().disconnect()
+        # Chiusura consumer Kafka
+        self.get_kafka_client().close()
+        print(f"\nConnessione al broker Kafka interrotta, e connessione al broker MQTT cessata con ", end="")
+        print("successo\n" if err == MQTTErrorCode.MQTT_ERR_SUCCESS else "insuccesso\n")
 
 # Check CMD Line Arguments - verifica dei parametri passati da linea di comando, in particolare relativi a host e porta
 # del broker MQTT e del broker Kafka; per entrambi gli host viene controllato solamente se l'indirizzo è una stringa
@@ -265,7 +289,7 @@ def check_cmd_line_args(host_mqtt: str, port_mqtt: str, host_kafka: str, port_ka
     mqtt_host = host_mqtt
     if mqtt_host == "":
         sys.stderr.write("Errore! L'argomento $host_mqtt deve essere un indirizzo non nullo\n")
-        exit(-2)
+        sys.exit(-2)
 
     # Port MQTT
     # Check numero valido
@@ -273,19 +297,19 @@ def check_cmd_line_args(host_mqtt: str, port_mqtt: str, host_kafka: str, port_ka
         mqtt_port = int(port_mqtt)
     except ValueError:
         sys.stderr.write("Errore! L'argomento $porta_mqtt passato da linea di comando non è un numero valido\n")
-        exit(-3)
+        sys.exit(-3)
 
     # Check porta
     if mqtt_port != 1883 and mqtt_port != 8883:
         sys.stderr.write("Errore! L'argomento $porta_mqtt deve essere una porta MQTT valida: 1883 oppure 8883 (connessioni SSL)\n")
-        exit(-4)
+        sys.exit(-4)
 
     # Host Kafka
     # Check stringa non vuota
     kafka_host = host_kafka
     if kafka_host == "":
         sys.stderr.write("Errore! L'argomento $host_kafka deve essere un indirizzo non nullo\n")
-        exit(-5)
+        sys.exit(-5)
 
     # Port Kafka
     # Check numero valido
@@ -293,12 +317,12 @@ def check_cmd_line_args(host_mqtt: str, port_mqtt: str, host_kafka: str, port_ka
         kafka_port = int(port_kafka)
     except ValueError:
         sys.stderr.write("Errore! L'argomento $porta_kafka passato da linea di comando non è un numero valido\n")
-        exit(-6)
+        sys.exit(-6)
 
     # Check porta
     if kafka_port != 9092:
         sys.stderr.write("Errore! L'argomento $porta_kafka deve essere una porta Kafka valida: 9092\n")
-        exit(-7)
+        sys.exit(-7)
 
     return mqtt_host, mqtt_port, kafka_host, kafka_port
 
@@ -313,10 +337,16 @@ def main():
         sys.stderr.write("\t$porta_mqtt = '1883' | '8883'\n")
         sys.stderr.write("\t$host_kafka = 'host_Kafka_broker'\n")
         sys.stderr.write("\t$porta_kafka = '9092'\n")
-        exit(-1)
+        sys.exit(-1)
+
+    # Installazione handler del segnale CTRL+C
+    signal.signal(signalnum=signal.SIGINT, handler=signal_handler)
 
     # Verifica validità indirizzo broker MQTT e indirizzo broker Kafka
     host_mqtt, port_mqtt, host_kafka, port_kafka = check_cmd_line_args(host_mqtt=sys.argv[1], port_mqtt=sys.argv[2], host_kafka=sys.argv[3], port_kafka=sys.argv[4])
+
+    # 
+    global bridge_mqtt_to_kafka
 
     # Instanziazione dell'oggetto Bridge MQTT to Kafka
     bridge_mqtt_to_kafka = BridgeMQTTKafka(host_mqtt=host_mqtt, port_mqtt=port_mqtt, host_kafka=host_kafka, port_kafka=port_kafka)
