@@ -6,6 +6,7 @@ from copy import deepcopy
 
 import numpy as np
 from autobus import Autobus
+from paho.mqtt.enums import MQTTErrorCode
 
 
 # Oggetto Autobus Ibrido - sottoclasse che identifica l'oggetto autobus smart di motorizzazione ibrida, 
@@ -61,6 +62,8 @@ class AutobusIbrido(Autobus):
         }
 
         # Aggiornamento "pacchetto" dati generale con l'aggiunta di quello specifico
+        # deepcopy(self._updated_data), anzi meglio metodo copy con copia superficiale perché i valori nelle coppie
+        # chiave - valore non sono mai liste o dizionari, sono sempre oggetti immutabili
         self._data_to_send["collected_metrics"]["hybrid"] = self._updated_data
 
         # Connessione al broker MQTT
@@ -77,17 +80,35 @@ class AutobusIbrido(Autobus):
         port = self.get_port()
         client_id = "autobus_" + self.get_LP()
 
+        # Inizializzazione var per contenere return value della connessione al broker MQTT
+        err = None
+
         # Impostazione client_id
         self.set_mqtt_client_id(client_id.encode())
         try:
             # Connessione verso il broker MQTT
-            mqtt_client.connect(host=host, port=port, keepalive=60)
+            err = mqtt_client.connect(host=host, port=port, keepalive=60)
         except socket.gaierror:
             sys.stderr.write("Errore! Impossibile risolvere l'indirizzo fornito\n")
-            exit(-16)
+            sys.exit(-18)
         except ConnectionRefusedError:
             sys.stderr.write("Errore! Connessione rifiutata\n")
-            exit(-17)
+            sys.exit(-19)
+        else:
+            # Verifica buon fine connessione
+            if err == MQTTErrorCode.MQTT_ERR_SUCCESS:
+                # Utilizzo del metodo loop_start() che concede di non preoccuparsi di funzionalità utili come la 
+                # riconnessione automatica al broker MQTT. Creazione di un thread separato per effettuare le operazioni
+                # che seguono
+                err_l = mqtt_client.loop_start()
+
+                # Verifica buon fine start background thread
+                if err_l != MQTTErrorCode.MQTT_ERR_SUCCESS:
+                    print("Errore! Mancata esecuzione del background thread per la comunicazione\n")
+                    sys.exit(-20)
+            else:
+                print("Errore! Connessione non avvenuta\n")
+                sys.exit(-21)
 
     # Getter 'battery_lvl' parameter
     def get_battery_lvl(self):
@@ -143,10 +164,14 @@ class AutobusIbrido(Autobus):
 
     # Getter 'updated_data' parameter
     def get_updated_data(self):
+        # Forse meglio copy()
         return deepcopy(self._updated_data)
+
+    # Setter 'updated_data' parameter
 
     # Getter 'threshold_list' parameter
     def get_threshold_list(self):
+        # Forse meglio copy()
         return deepcopy(self._threshold_list)
 
     # Getter 'static_threshold' parameter
@@ -158,6 +183,7 @@ class AutobusIbrido(Autobus):
         if type(static_threshold) is not float:
             raise TypeError(f"Errore! Il tipo del parametro passato deve essere 'float'. Ricevuto {type(static_threshold)}")
         
+        # Modifica anche della lista da cui generare la soglia dinamica di rifornimento e reimpostazione di questa
         self._static_threshold = static_threshold
 
     # Getter 'dynamic_threshold' parameter
@@ -214,6 +240,11 @@ class AutobusIbrido(Autobus):
             # precedente misura di livello batteria
             if new_bt_lvl not in np.arange(prec_bt_lvl - bt_lvl_span, prec_bt_lvl + bt_lvl_span + 0.01, 0.01):
 
+                # ERRORE - nel momento in cui il limite inferiore è uguale e quello superiore è inferiore in realtà il
+                # flusso entra nell'else modificando la simulazione nell'intervallo [prec_bt_lvl - bt_lvl_span, bt_lvl_up],
+                # quando dovrebbe essere in [prec_bt_lvl - bt_lvl_span || bt_lvl_low, prec_bt_lvl + bt_lvl_span] perché se
+                # sono uguali i limiti inferiori che sia uno o l'altro non fa differenza
+
                 # Verifica presenza dell'intervallo [prec_bt_lvl - bt_lvl_span, prec_bt_lvl + bt_lvl_span] all'interno
                 # dell'intervallo generale
                 if ( prec_bt_lvl - bt_lvl_span ) > self._ranges["battery_lvl_low"] and ( prec_bt_lvl + bt_lvl_span ) < self._ranges["battery_lvl_up"]:
@@ -235,6 +266,12 @@ class AutobusIbrido(Autobus):
             # Verifica temperatura batteria generata randomicamente all'interno dell'intervallo di discostamento massimo
             # dalla precedente misura di temperatura batteria
             if new_bt_temp not in np.arange(prec_bt_temp - bt_temp_span, prec_bt_temp + bt_temp_span + 0.01, 0.01):
+
+                # ERRORE - nel momento in cui il limite inferiore è uguale e quello superiore è inferiore in realtà il
+                # flusso entra nell'else modificando la simulazione nell'intervallo
+                # [prec_bt_temp - bt_temp_span, bt_temp_up], quando dovrebbe essere in
+                # [prec_bt_temp - bt_temp_span || bt_temp_low, prec_bt_temp + bt_temp_span] perché se sono uguali i limiti
+                # inferiori che sia uno o l'altro non fa differenza
 
                 # Verifica presenza dell'intervallo [prec_bt_temp - bt_temp_span, prec_bt_temp + bt_temp_span] all'interno
                 # dell'intervallo generale
@@ -287,12 +324,7 @@ class AutobusIbrido(Autobus):
         mqtt_timeout = self.get_timeout()
         payload = self.get_formatted_data_to_send()
         msg_queue = self.get_msg_queue()
-
-        # Utilizzo del metodo loop_start() che concede di non preoccuparsi di funzionalità utili come la 
-        # riconnessione automatica al broker MQTT. Creazione di un thread separato per effettuare le operazioni
-        # che seguono
-        mqtt_client.loop_start()
-
+     
         # Verifica connessione client to broker
         if mqtt_client.is_connected():
             # Verifica messaggi in coda
