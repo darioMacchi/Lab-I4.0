@@ -434,7 +434,7 @@ class Autobus:
                 self.set_lat_direction("NORD")
                 new_lat = round(prec_latitude + lat_span, 5)
             else:
-                sys.stderr.write("Errore! Ripristino latitudine al punto di partenza")
+                sys.stderr.write("Errore! Ripristino latitudine al punto di partenza\n")
                 new_lat = self._ranges["gps"]["latitude_low"]
 
             self.set_latitude(new_lat)
@@ -456,7 +456,7 @@ class Autobus:
                 self.set_long_direction("EST")
                 new_long = round(prec_longitude + long_span, 5)
             else:
-                sys.stderr.write("Errore! Ripristino longitudine al punto di partenza")
+                sys.stderr.write("Errore! Ripristino longitudine al punto di partenza\n")
                 new_long = self._ranges["gps"]["longitude_low"]
 
             self.set_longitude(new_long)
@@ -469,23 +469,22 @@ class Autobus:
             # precedente misura di velocità
             if new_speed not in np.arange(prec_speed - speed_span, prec_speed + speed_span + 0.1, 0.1):
 
-                # -- ERRORE --
-                # Nel momento in cui il limite inferiore è uguale e quello superiore è inferiore in realtà il
-                # flusso entra nell'else modificando la simulazione nell'intervallo [prec_speed - speed_span, speed_up],
-                # quando dovrebbe essere in [prec_speed - speed_span || speed_low, prec_speed + speed_span] perché se
-                # sono uguali i limiti inferiori che sia uno o l'altro non fa differenza
-                # -- VERIFICA RISOLUZIONE (ANCHE CON TESTING) --
-
                 # Verifica presenza dell'intervallo [prec_speed - speed_span, prec_speed + speed_span] all'interno
                 # dell'intervallo generale
-                if ( prec_speed - speed_span ) > self._ranges["speed_low"] and ( prec_speed + speed_span ) < self._ranges["speed_up"]:
+                if ( prec_speed - speed_span ) >= self._ranges["speed_low"] and ( prec_speed + speed_span ) <= self._ranges["speed_up"]:
                     self.set_speed( round( random.random() * (( prec_speed + speed_span ) - ( prec_speed - speed_span )) + ( prec_speed - speed_span ), 1 ) )
                 # Verifica uscita dall'intervallo generale dell'estremo inferiore
-                elif ( prec_speed - speed_span ) <= self._ranges["speed_low"] and ( prec_speed + speed_span ) < self._ranges["speed_up"]:
+                elif ( prec_speed - speed_span ) < self._ranges["speed_low"] and ( prec_speed + speed_span ) <= self._ranges["speed_up"]:
                     self.set_speed( round( random.random() * (( prec_speed + speed_span ) - self._ranges["speed_low"]) + self._ranges["speed_low"], 1 ) )
                 # Uscita dall'intervallo generale dell'estremo superiore
-                elif ( prec_speed + speed_span ) >= self._ranges["speed_up"] and ( prec_speed - speed_span ) > self._ranges["speed_low"]:
+                elif ( prec_speed + speed_span ) > self._ranges["speed_up"] and ( prec_speed - speed_span ) >= self._ranges["speed_low"]:
                     self.set_speed( round( random.random() * (self._ranges["speed_up"] - ( prec_speed - speed_span )) + ( prec_speed - speed_span ), 1 ) )
+                # Gestione alternativa - per le ipotesi della funzione i casi che possono avvenire sono solamente i tre
+                # già gestiti immediatamente sopra, però viene aggiunta una gestione alternativa per evitare eventuali
+                # problemi
+                else:
+                    sys.stderr.write("Errore! Ripristino velocità iniziale\n")
+                    self.set_speed(initial_speed)
 
             else:
                 self.set_speed( new_speed )
@@ -500,14 +499,20 @@ class Autobus:
 
                 # Verifica presenza dell'intervallo [prec_tyre_pressure - tyre_span, prec_tyre_pressure + tyre_span] all'interno
                 # dell'intervallo generale
-                if ( prec_tyre_pressure - tyre_span ) > self._ranges["tyre_pressure_low"] and ( prec_tyre_pressure + tyre_span ) < self._ranges["tyre_pressure_up"]:
+                if ( prec_tyre_pressure - tyre_span ) >= self._ranges["tyre_pressure_low"] and ( prec_tyre_pressure + tyre_span ) <= self._ranges["tyre_pressure_up"]:
                     self.set_tyre_pressure( round( random.random() * (( prec_tyre_pressure + tyre_span ) - ( prec_tyre_pressure - tyre_span )) + ( prec_tyre_pressure - tyre_span ), 2 ) )
                 # Verifica uscita dall'intervallo generale dell'estremo inferiore
-                elif ( prec_tyre_pressure - tyre_span ) < self._ranges["tyre_pressure_low"]:
+                elif ( prec_tyre_pressure - tyre_span ) < self._ranges["tyre_pressure_low"] and ( prec_tyre_pressure + tyre_span ) <= self._ranges["tyre_pressure_up"]:
                     self.set_tyre_pressure( round( random.random() * (( prec_tyre_pressure + tyre_span ) - self._ranges["tyre_pressure_low"]) + self._ranges["tyre_pressure_low"], 2 ) )
                 # Uscita dall'intervallo generale dell'estremo superiore
-                else:
+                elif ( prec_tyre_pressure + tyre_span ) > self._ranges["tyre_pressure_up"] and ( prec_tyre_pressure - tyre_span ) >= self._ranges["tyre_pressure_low"]:
                     self.set_tyre_pressure( round( random.random() * (self._ranges["tyre_pressure_up"] - ( prec_tyre_pressure - tyre_span )) + ( prec_tyre_pressure - tyre_span ), 2 ) )
+                # Gestione alternativa - per le ipotesi della funzione i casi che possono avvenire sono solamente i tre
+                # già gestiti immediatamente sopra, però viene aggiunta una gestione alternativa per evitare eventuali
+                # problemi
+                else:
+                    sys.stderr.write("Errore! Ripristino pressione gomme iniziale\n")
+                    self.set_tyre_pressure(self._ranges["tyre_pressure_up"])
 
             else:
                 self.set_tyre_pressure( new_tyre_pressure )
@@ -534,14 +539,20 @@ class Autobus:
 
                     # Verifica presenza dell'intervallo [prec_num_psg - psg_span, prec_num_psg + psg_span] all'interno
                     # dell'intervallo generale
-                    if ( prec_num_psg - psg_span ) > self._ranges["num_psg_low"] and ( prec_num_psg + psg_span ) < self._ranges["num_psg_up"]:
+                    if ( prec_num_psg - psg_span ) >= self._ranges["num_psg_low"] and ( prec_num_psg + psg_span ) <= self._ranges["num_psg_up"]:
                         self.set_num_psg( random.randrange( (prec_num_psg - psg_span), (prec_num_psg + psg_span) ) )
                     # Verifica uscita dall'intervallo generale dell'estremo inferiore
-                    elif ( prec_num_psg - psg_span ) < self._ranges["num_psg_low"]:
+                    elif ( prec_num_psg - psg_span ) < self._ranges["num_psg_low"] and ( prec_num_psg + psg_span ) <= self._ranges["num_psg_up"]:
                         self.set_num_psg( random.randrange( self._ranges["num_psg_low"], (prec_num_psg + psg_span) ) )
                     # Uscita dall'intervallo generale dell'estremo superiore
-                    else:
+                    elif ( prec_num_psg + psg_span ) > self._ranges["num_psg_up"] and ( prec_num_psg - psg_span ) >= self._ranges["num_psg_low"]:
                         self.set_num_psg( random.randrange( (prec_num_psg - psg_span), self._ranges["num_psg_up"] ) )
+                    # Gestione alternativa - per le ipotesi della funzione i casi che possono avvenire sono solamente i tre
+                    # già gestiti immediatamente sopra, però viene aggiunta una gestione alternativa per evitare eventuali
+                    # problemi
+                    else:
+                        sys.stderr.write("Errore! Ripristino numero passeggeri iniziale\n")
+                        self.set_num_psg(initial_num_psg)
 
                 else:
                     self.set_num_psg( new_psg )
@@ -558,14 +569,20 @@ class Autobus:
 
                 # Verifica presenza dell'intervallo [prec_temperature - temp_span, prec_temperature + temp_span] all'interno
                 # dell'intervallo generale
-                if ( prec_temperature - temp_span ) > self._ranges["environmental"]["temp_low"] and ( prec_temperature + temp_span ) < self._ranges["environmental"]["temp_up"]:
+                if ( prec_temperature - temp_span ) >= self._ranges["environmental"]["temp_low"] and ( prec_temperature + temp_span ) <= self._ranges["environmental"]["temp_up"]:
                     self.set_temperature( round( random.random() * (( prec_temperature + temp_span ) - ( prec_temperature - temp_span )) + ( prec_temperature - temp_span ), 3 ) )
                 # Verifica uscita dall'intervallo generale dell'estremo inferiore
-                elif ( prec_temperature - temp_span ) < self._ranges["environmental"]["temp_low"]:
+                elif ( prec_temperature - temp_span ) < self._ranges["environmental"]["temp_low"] and ( prec_temperature + temp_span ) <= self._ranges["environmental"]["temp_up"]:
                     self.set_temperature( round( random.random() * (( prec_temperature + temp_span ) - self._ranges["environmental"]["temp_low"]) + self._ranges["environmental"]["temp_low"], 3 ) )
                 # Uscita dall'intervallo generale dell'estremo superiore
-                else:
+                elif ( prec_temperature + temp_span ) > self._ranges["environmental"]["temp_up"] and ( prec_temperature - temp_span ) >= self._ranges["environmental"]["temp_low"]:
                     self.set_temperature( round( random.random() * (self._ranges["environmental"]["temp_up"] - ( prec_temperature - temp_span )) + ( prec_temperature - temp_span ), 3 ) )
+                # Gestione alternativa - per le ipotesi della funzione i casi che possono avvenire sono solamente i tre
+                # già gestiti immediatamente sopra, però viene aggiunta una gestione alternativa per evitare eventuali
+                # problemi
+                else:
+                    sys.stderr.write("Errore! Ripristino temperatura\n")
+                    self.set_temperature( round( random.random() * (self._ranges["environmental"]["temp_up"] - self._ranges["environmental"]["temp_low"]) + self._ranges["environmental"]["temp_low"], 3 ) )
 
             else:
                 self.set_temperature( new_temp )
@@ -580,14 +597,20 @@ class Autobus:
 
                 # Verifica presenza dell'intervallo [prec_humidity - hum_span, prec_humidity + hum_span] all'interno
                 # dell'intervallo generale
-                if ( prec_humidity - hum_span ) > self._ranges["environmental"]["hum_low"] and ( prec_humidity + hum_span ) < self._ranges["environmental"]["hum_up"]:
+                if ( prec_humidity - hum_span ) >= self._ranges["environmental"]["hum_low"] and ( prec_humidity + hum_span ) <= self._ranges["environmental"]["hum_up"]:
                     self.set_humidity( round( random.random() * (( prec_humidity + hum_span ) - ( prec_humidity - hum_span )) + ( prec_humidity - hum_span ), 3 ) )
                 # Verifica uscita dall'intervallo generale dell'estremo inferiore
-                elif ( prec_humidity - hum_span ) < self._ranges["environmental"]["hum_low"]:
+                elif ( prec_humidity - hum_span ) < self._ranges["environmental"]["hum_low"] and ( prec_humidity + hum_span ) <= self._ranges["environmental"]["hum_up"]:
                     self.set_humidity( round( random.random() * (( prec_humidity + hum_span ) - self._ranges["environmental"]["hum_low"]) + self._ranges["environmental"]["hum_low"], 3 ) )
                 # Uscita dall'intervallo generale dell'estremo superiore
-                else:
+                elif ( prec_humidity + hum_span ) > self._ranges["environmental"]["hum_up"] and ( prec_humidity - hum_span ) >= self._ranges["environmental"]["hum_low"]:
                     self.set_humidity( round( random.random() * (self._ranges["environmental"]["hum_up"] - ( prec_humidity - hum_span )) + ( prec_humidity - hum_span ), 3 ) )
+                # Gestione alternativa - per le ipotesi della funzione i casi che possono avvenire sono solamente i tre
+                # già gestiti immediatamente sopra, però viene aggiunta una gestione alternativa per evitare eventuali
+                # problemi
+                else:
+                    sys.stderr.write("Errore! Ripristino umidità\n")
+                    self.set_humidity( round( random.random() * (self._ranges["environmental"]["hum_up"] - self._ranges["environmental"]["hum_low"]) + self._ranges["environmental"]["hum_low"], 3 ) )
 
             else:
                 self.set_humidity( new_hum )
