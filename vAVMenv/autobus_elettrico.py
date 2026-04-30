@@ -219,7 +219,7 @@ class AutobusElettrico(Autobus):
             
             self.set_battery_lvl(new_bt_lvl)
 
-            # LIVELLO BATTERIA - discostamento massimo in un determinato intervallo, in questa maniera rispetto al valore 
+            # TEMPERATURA BATTERIA - discostamento massimo in un determinato intervallo, in questa maniera rispetto al valore 
             # precedente si mantiene un aggiornamento più sensato
             new_bt_temp = round( random.random() * (self._ranges["battery_temp_up"] - self._ranges["battery_temp_low"]) + self._ranges["battery_temp_low"], 2 )
 
@@ -227,22 +227,22 @@ class AutobusElettrico(Autobus):
             # precedente misura di livello batteria
             if new_bt_temp not in np.arange(prec_bt_temp - bt_temp_span, prec_bt_temp + bt_temp_span + 0.01, 0.01):
 
-                # ERRORE - nel momento in cui il limite inferiore è uguale e quello superiore è inferiore in realtà il
-                # flusso entra nell'else modificando la simulazione nell'intervallo
-                # [prec_bt_temp - bt_temp_span, bt_temp_up], quando dovrebbe essere in
-                # [prec_bt_temp - bt_temp_span || bt_temp_low, prec_bt_temp + bt_temp_span] perché se sono uguali i limiti
-                # inferiori che sia uno o l'altro non fa differenza
-
                 # Verifica presenza dell'intervallo [prec_bt_temp - bt_temp_span, prec_bt_temp + bt_temp_span] all'interno
                 # dell'intervallo generale
-                if ( prec_bt_temp - bt_temp_span ) > self._ranges["battery_temp_low"] and ( prec_bt_temp + bt_temp_span ) < self._ranges["battery_temp_up"]:
+                if ( prec_bt_temp - bt_temp_span ) >= self._ranges["battery_temp_low"] and ( prec_bt_temp + bt_temp_span ) <= self._ranges["battery_temp_up"]:
                     self.set_battery_temp( round( random.random() * (( prec_bt_temp + bt_temp_span ) - ( prec_bt_temp - bt_temp_span )) + ( prec_bt_temp - bt_temp_span ), 2 ) )
                 # Verifica uscita dall'intervallo generale dell'estremo inferiore
-                elif ( prec_bt_temp - bt_temp_span ) < self._ranges["battery_temp_low"]:
+                elif ( prec_bt_temp - bt_temp_span ) < self._ranges["battery_temp_low"] and ( prec_bt_temp + bt_temp_span ) <= self._ranges["battery_temp_up"]:
                     self.set_battery_temp( round( random.random() * (( prec_bt_temp + bt_temp_span ) - self._ranges["battery_temp_low"]) + self._ranges["battery_temp_low"], 2 ) )
                 # Uscita dall'intervallo generale dell'estremo superiore
-                else:
+                elif ( prec_bt_temp + bt_temp_span ) > self._ranges["battery_temp_up"] and ( prec_bt_temp - bt_temp_span ) >= self._ranges["battery_temp_low"]:
                     self.set_battery_temp( round( random.random() * (self._ranges["battery_temp_up"] - ( prec_bt_temp - bt_temp_span )) + ( prec_bt_temp - bt_temp_span ), 2 ) )
+                # Gestione alternativa - per le ipotesi della funzione i casi che possono avvenire sono solamente i tre
+                # già gestiti immediatamente sopra, però viene aggiunta una gestione alternativa per evitare eventuali
+                # problemi
+                else:
+                    sys.stderr.write("Errore! Ripristino temperatura batteria iniziale\n")
+                    self.set_battery_temp(initial_battery_temp)
 
             else:
                 self.set_battery_temp( new_bt_temp )
