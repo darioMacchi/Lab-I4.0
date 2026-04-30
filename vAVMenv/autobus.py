@@ -1,6 +1,5 @@
 import json
 import random
-import signal
 import sys
 import time
 from copy import deepcopy
@@ -8,6 +7,7 @@ from copy import deepcopy
 import numpy as np
 import paho.mqtt.client as mqtt
 import paho.mqtt.reasoncodes as mqttrc
+from paho.mqtt.enums import MQTTErrorCode
 
 
 # Oggetto Autobus - superclasse che identifica l'oggetto autobus smart indipendentemente dalla sua motorizzazione, 
@@ -77,24 +77,6 @@ class Autobus:
         self._timeout = timeout
         self._host = host
         self._port = port
-
-        # Installazione handler del segnale CTRL+C
-        signal.signal(signalnum=signal.SIGINT, handler=self.shutdown_autobus)
-
-    # Handler del segnale CTRL+C - metodo con cui si termina l'esecuzione
-    # dell'Autobus con un messaggio, successivamente avviene la cessazione della connessione
-    # con il broker RabbitMQ per il protocollo di comunicazione MQTT, e infine avviene la 
-    # terminazione con codice uscita 0 (funzionamento corretto) - firma del handler deve
-    # essere 'handler_name(self, sig_num, frame)'
-    def shutdown_autobus(self, sig_num: int, frame):
-        sig_name = signal.Signals(sig_num).name
-
-        # Disconnessione dal broker MQTT
-        err = self.get_mqtt_client().disconnect()
-        print(f"\nEsecuzione interrotta dal segnale {sig_name} e connessione al broker cessata con ", end="")
-        print("successo" if err == mqtt.MQTT_ERR_SUCCESS else "insuccesso")
-        print("Spegnimento motore...")
-        exit(0)
     
     # on_connect - callback necessaria per il protocollo di comunicazione MQTT per gestire il momento in cui 
     # il client riceve una risposta CONNACK dal server (broker RabbitMQ) - firma prestabilita
@@ -348,7 +330,7 @@ class Autobus:
         lat_direction = lat_direction.upper()
         if lat_direction != "NORD" and lat_direction != "SUD":
             sys.stderr.write("Errore! Il parametro passato deve essere: NORD | SUD | nord | sud\n")
-            exit(-1)
+            sys.exit(-1)
 
         self._lat_direction = lat_direction
 
@@ -365,7 +347,7 @@ class Autobus:
         long_direction = long_direction.upper()
         if long_direction != "EST" and long_direction != "OVEST":
             sys.stderr.write("Errore! Il parametro passato deve essere: EST | OVEST | est | ovest\n")
-            exit(-2)
+            sys.exit(-2)
 
         self._long_direction = long_direction
 
@@ -438,7 +420,7 @@ class Autobus:
             # LATITUDINE - copertura di un percorso unico tra le due coordinate limite
             new_lat = 0.0
 
-            # Finché lo spostaento avviene in una direzione e il limite massimo non viene superato si continua ad
+            # Finché lo spostamento avviene in una direzione e il limite massimo non viene superato si continua ad
             # aggiungere o sottrarre, nel momento in cui il limite massimo viene superato si inverte la direzione e 
             # l'operazione di addizione o sottrazione
             if self.get_lat_direction() == "NORD" and round(prec_latitude + lat_span, 5) <= self._ranges["gps"]["latitude_up"]:
@@ -460,7 +442,7 @@ class Autobus:
             # LONGITUDINE - copertura di un percorso unico tra le due coordinate limite
             new_long = 0.0
 
-            # Finché lo spostaento avviene in una direzione e il limite massimo non viene superato si continua ad
+            # Finché lo spostamento avviene in una direzione e il limite massimo non viene superato si continua ad
             # aggiungere o sottrarre, nel momento in cui il limite massimo viene superato si inverte la direzione e 
             # l'operazione di addizione o sottrazione
             if self.get_long_direction() == "EST" and round(prec_longitude + long_span, 5) <= self._ranges["gps"]["longitude_up"]:
@@ -487,15 +469,22 @@ class Autobus:
             # precedente misura di velocità
             if new_speed not in np.arange(prec_speed - speed_span, prec_speed + speed_span + 0.1, 0.1):
 
+                # -- ERRORE --
+                # Nel momento in cui il limite inferiore è uguale e quello superiore è inferiore in realtà il
+                # flusso entra nell'else modificando la simulazione nell'intervallo [prec_speed - speed_span, speed_up],
+                # quando dovrebbe essere in [prec_speed - speed_span || speed_low, prec_speed + speed_span] perché se
+                # sono uguali i limiti inferiori che sia uno o l'altro non fa differenza
+                # -- VERIFICA RISOLUZIONE (ANCHE CON TESTING) --
+
                 # Verifica presenza dell'intervallo [prec_speed - speed_span, prec_speed + speed_span] all'interno
                 # dell'intervallo generale
                 if ( prec_speed - speed_span ) > self._ranges["speed_low"] and ( prec_speed + speed_span ) < self._ranges["speed_up"]:
                     self.set_speed( round( random.random() * (( prec_speed + speed_span ) - ( prec_speed - speed_span )) + ( prec_speed - speed_span ), 1 ) )
                 # Verifica uscita dall'intervallo generale dell'estremo inferiore
-                elif ( prec_speed - speed_span ) < self._ranges["speed_low"]:
+                elif ( prec_speed - speed_span ) <= self._ranges["speed_low"] and ( prec_speed + speed_span ) < self._ranges["speed_up"]:
                     self.set_speed( round( random.random() * (( prec_speed + speed_span ) - self._ranges["speed_low"]) + self._ranges["speed_low"], 1 ) )
                 # Uscita dall'intervallo generale dell'estremo superiore
-                else:
+                elif ( prec_speed + speed_span ) >= self._ranges["speed_up"] and ( prec_speed - speed_span ) > self._ranges["speed_low"]:
                     self.set_speed( round( random.random() * (self._ranges["speed_up"] - ( prec_speed - speed_span )) + ( prec_speed - speed_span ), 1 ) )
 
             else:
@@ -663,3 +652,18 @@ class Autobus:
         print("Dati ambientali:")
         print(f"\tTemperatura: {self.get_temperature()} °C")
         print(f"\tUmidità: {self.get_humidity()} %")
+
+    # Stop Autobus - terminazione delle connnessioni dell'oggetto Autobus, in particolare cessazione della connessione col
+    # broker MQTT per la comunicazione, e terminazione del background thread previsto per la gestione del traffico di rete,
+    # inoltre stampa a video di un messaggio informativo
+    def stop_autobus(self):
+        # Disconnessione broker MQTT
+        err_d = self.get_mqtt_client().disconnect()
+        # Terminazione background thread
+        err_s = self.get_mqtt_client().loop_stop()
+
+        print("Connessione al broker cessata con ", end="")
+        print("successo " if err_d == MQTTErrorCode.MQTT_ERR_SUCCESS else "insuccesso ", end="")
+        print("e terminazione background thread avvenuta con ", end="")
+        print("successo " if err_s == MQTTErrorCode.MQTT_ERR_SUCCESS else "insuccesso ", end="")
+        print(f"per l'autobus con motorizzazione termica con targa {self.get_LP()}\n")

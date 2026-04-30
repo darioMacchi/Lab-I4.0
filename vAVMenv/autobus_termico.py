@@ -6,6 +6,7 @@ from copy import deepcopy
 
 import numpy as np
 from autobus import Autobus
+from paho.mqtt.enums import MQTTErrorCode
 
 
 # Oggetto Autobus Termico - sottoclasse che identifica l'oggetto autobus smart di motorizzazione termica, 
@@ -57,6 +58,8 @@ class AutobusTermico(Autobus):
         }
 
         # Aggiornamento "pacchetto" dati generale con l'aggiunta di quello specifico
+        # deepcopy(self._updated_data), anzi meglio metodo copy con copia superficiale perché i valori nelle coppie
+        # chiave - valore non sono mai liste o dizionari, sono sempre oggetti immutabili
         self._data_to_send["collected_metrics"]["termic"] = self._updated_data
 
         # Connessione al broker MQTT
@@ -73,17 +76,35 @@ class AutobusTermico(Autobus):
         port = self.get_port()
         client_id = "autobus_" + self.get_LP()
 
+        # Inizializzazione var per contenere return value della connessione al broker MQTT
+        err = None
+
         # Impostazione client_id
         self.set_mqtt_client_id(client_id.encode())
         try:
             # Connessione verso il broker MQTT
-            mqtt_client.connect(host=host, port=port, keepalive=60)
+            err = mqtt_client.connect(host=host, port=port, keepalive=60)
         except socket.gaierror:
             sys.stderr.write("Errore! Impossibile risolvere l'indirizzo fornito\n")
-            exit(-14)
+            sys.exit(-14)
         except ConnectionRefusedError:
             sys.stderr.write("Errore! Connessione rifiutata\n")
-            exit(-15)
+            sys.exit(-15)
+        else:
+            # Verifica buon fine connessione
+            if err == MQTTErrorCode.MQTT_ERR_SUCCESS:
+                # Utilizzo del metodo loop_start() che concede di non preoccuparsi di funzionalità utili come la 
+                # riconnessione automatica al broker MQTT. Creazione di un thread separato per effettuare le operazioni
+                # che seguono
+                err_l = mqtt_client.loop_start()
+
+                # Verifica buon fine start background thread
+                if err_l != MQTTErrorCode.MQTT_ERR_SUCCESS:
+                    print("Errore! Mancata esecuzione del background thread per la comunicazione\n")
+                    sys.exit(-16)
+            else:
+                print("Errore! Connessione non avvenuta\n")
+                sys.exit(-17)
 
     # Getter 'fuel_lvl' parameter
     def get_fuel_lvl(self):
@@ -113,10 +134,14 @@ class AutobusTermico(Autobus):
 
     # Getter 'updated_data' parameter
     def get_updated_data(self):
+        # Forse meglio copy()
         return deepcopy(self._updated_data)
+
+    # Setter 'updated_data' parameter
 
     # Getter 'threshold_list' parameter
     def get_threshold_list(self):
+        # Forse meglio copy()
         return deepcopy(self._threshold_list)
 
     # Getter 'static_threshold' parameter
@@ -128,6 +153,7 @@ class AutobusTermico(Autobus):
         if type(static_threshold) is not float:
             raise TypeError(f"Errore! Il tipo del parametro passato deve essere 'float'. Ricevuto {type(static_threshold)}")
         
+        # Modifica anche della lista da cui generare la soglia dinamica di rifornimento e reimpostazione di questa
         self._static_threshold = static_threshold
 
     # Getter 'dynamic_threshold' parameter
@@ -204,11 +230,6 @@ class AutobusTermico(Autobus):
         mqtt_timeout = self.get_timeout()
         payload = self.get_formatted_data_to_send()
         msg_queue = self.get_msg_queue()
-
-        # Utilizzo del metodo loop_start() che concede di non preoccuparsi di funzionalità utili come la 
-        # riconnessione automatica al broker MQTT. Creazione di un thread separato per effettuare le operazioni
-        # che seguono
-        mqtt_client.loop_start()
 
         # Verifica connessione client to broker
         if mqtt_client.is_connected():
