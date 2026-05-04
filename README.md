@@ -12,13 +12,13 @@ Il sistema si ispira ai moderni approcci di fleet management e telemetria, comun
 
 ## 🏗️ Architettura
 Il progetto è strutturato in diversi moduli:
-  - Data Collection → acquisizione dati dai sensori.
+  - Data Collection / Ingestion → acquisizione dati dai sensori.
   - Processing Layer → aggregazione e analisi dei dati.
   - Storage → database.
   - Visualization → esposizione dei dati tramite dashboard.
 
 ```
-Vehicle → Data Collector → Processing → Storage → Dashboard
+Vehicle → Data Collector / Ingestion → Processing → Storage → Dashboard
 ```
 
 ## ⚙️ Tecnologie utilizzate
